@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
+
+const stripe = require("stripe")(process.env.STRIPE_SECRET)
 const port = process.env.PORT || 5000;
 const jwt = require("jsonwebtoken");
 const app = express();
@@ -47,6 +49,7 @@ async function run() {
       .collection("bookings");
     const usersCollection = client.db("Dcotors-portal").collection("users");
     const doctorsCollection = client.db("Dcotors-portal").collection("doctors");
+    const PaymentsCollection = client.db("Dcotors-portal").collection("payments");
 
     //verify admin via a middleware-make sure this function run after verify JWT function so that you can check the decoded email;
 
@@ -84,7 +87,40 @@ async function run() {
       });
       res.send(options);
     });
+//api for payment method
 
+app.post('/create-payment-intent',async(req,res) =>{
+  const booking = req.body;
+  const price = booking.price;
+  const amount = price * 100;
+  const paymentIntent = await stripe.paymentIntents.create({
+    currency:'usd',
+    amount:amount,
+    'payment_method_types':[
+      "card"
+    ]
+  });
+  console.log(paymentIntent.client_secret)
+  res.send({
+    clientSecret: paymentIntent.client_secret,
+  })
+});
+//store payment info
+
+app.post('/payments',async(req,res)=>{
+  const payment = req.body;
+  const result = await PaymentsCollection.insertOne(payment);
+  const id = payment.bookingId
+  const query = {_id:ObjectId(id)}
+  const updatedDoc ={
+    $set:{
+      paid:true,
+      transactionID:payment.transactionId
+    }
+  }
+  const updatedResult = await BookingCollection.updateOne(query,updatedDoc,)
+  res.send(result)
+})
     app.get("/jwt", async (req, res) => {
       const email = req.query.email;
       const query = { email: email };
